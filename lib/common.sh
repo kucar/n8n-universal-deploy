@@ -72,12 +72,100 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Ensure script is not run as root
-check_not_root() {
+# Create and setup a new user if running as root
+handle_root_user() {
     if [ "$EUID" -eq 0 ]; then
-        log_error "Please run this script as a normal user (not root)"
-        exit 1
+        log_warn "═══════════════════════════════════════════════════════════════════"
+        log_warn "Running as root user detected!"
+        log_warn "For security reasons, n8n should not be deployed as root."
+        log_warn "═══════════════════════════════════════════════════════════════════"
+        echo
+        echo "Would you like to:"
+        echo "1) Create a new user for n8n deployment (recommended)"
+        echo "2) Exit and run as a different user"
+        echo
+        prompt_user "Enter choice [1-2]" "1" ROOT_CHOICE
+        
+        if [ "$ROOT_CHOICE" = "2" ]; then
+            log_info "Please run this script as a non-root user with sudo privileges"
+            exit 0
+        fi
+        
+        # Create new user
+        echo
+        prompt_user "Enter username for new user" "n8n" NEW_USERNAME
+        
+        # Check if user already exists
+        if id "$NEW_USERNAME" &>/dev/null; then
+            log_error "User $NEW_USERNAME already exists"
+            echo -n "Use existing user? [y/N]: "
+            read use_existing
+            if [ "$use_existing" != "y" ] && [ "$use_existing" != "Y" ]; then
+                exit 1
+            fi
+        else
+            log_info "Creating new user: $NEW_USERNAME"
+            
+            # Create user with home directory
+            useradd -m -s /bin/bash "$NEW_USERNAME"
+            
+            # Set password
+            echo
+            log_info "Please set a password for user $NEW_USERNAME"
+            passwd "$NEW_USERNAME"
+            
+            # Add to sudo group (varies by distribution)
+            if [ -f /etc/debian_version ]; then
+                usermod -aG sudo "$NEW_USERNAME"
+            elif [ -f /etc/redhat-release ]; then
+                usermod -aG wheel "$NEW_USERNAME"
+            else
+                # Try both just in case
+                usermod -aG sudo "$NEW_USERNAME" 2>/dev/null || usermod -aG wheel "$NEW_USERNAME" 2>/dev/null
+            fi
+            
+            log_info "User $NEW_USERNAME created and added to sudo group"
+        fi
+        
+        # Copy the script and templates to new user's home
+        NEW_USER_HOME="/home/$NEW_USERNAME"
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        
+        log_info "Copying deployment files to new user's home directory..."
+        
+        # Create directory for the script
+        mkdir -p "$NEW_USER_HOME/n8n-universal-deploy"
+        
+        # Copy all files
+        cp -r "$SCRIPT_DIR"/* "$NEW_USER_HOME/n8n-universal-deploy/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR"/../* "$NEW_USER_HOME/n8n-universal-deploy/" 2>/dev/null || true
+        
+        # Fix ownership
+        chown -R "$NEW_USERNAME:$NEW_USERNAME" "$NEW_USER_HOME/n8n-universal-deploy"
+        
+        # Make scripts executable
+        chmod +x "$NEW_USER_HOME/n8n-universal-deploy/deploy-n8n.sh"
+        
+        log_info "═══════════════════════════════════════════════════════════════════"
+        log_info "User setup complete!"
+        log_info ""
+        log_info "Please run the following commands to continue:"
+        log_info ""
+        echo -e "${YELLOW}su - $NEW_USERNAME${NC}"
+        echo -e "${YELLOW}cd n8n-universal-deploy${NC}"
+        echo -e "${YELLOW}./deploy-n8n.sh${NC}"
+        log_info ""
+        log_info "Or connect via SSH as: ${GREEN}ssh $NEW_USERNAME@$(hostname -I | awk '{print $1}')${NC}"
+        log_info "═══════════════════════════════════════════════════════════════════"
+        
+        exit 0
     fi
+}
+
+# Ensure script is not run as root (called after handle_root_user)
+check_not_root() {
+    handle_root_user
+    # If we get here, we're not root, so continue normally
 }
 
 # Create directory structure
@@ -172,4 +260,4 @@ configure_firewall() {
             ;;
     esac
 }
-export -f configure_firewall 
+export -f configure_firewall
