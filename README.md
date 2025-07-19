@@ -1,6 +1,6 @@
 # Universal n8n Deployment Script
 
-A comprehensive, platform-generic script for deploying n8n workflow automation platform on various cloud providers and local environments.
+A comprehensive, platform-generic solution for deploying the n8n workflow automation platform on various cloud providers and local environments.
 
 ## Features
 
@@ -24,23 +24,42 @@ A comprehensive, platform-generic script for deploying n8n workflow automation p
 
 ## Quick Start
 
+### Clone the Repository (Recommended)
+
 ```bash
-# Download the script
-wget https://raw.githubusercontent.com/your-repo/n8n-deploy/main/deploy-n8n.sh
-# Or
-curl -O https://raw.githubusercontent.com/your-repo/n8n-deploy/main/deploy-n8n.sh
-
-# Make it executable
+git clone https://github.com/kucar/n8n-universal-deploy.git
+cd n8n-universal-deploy
 chmod +x deploy-n8n.sh
-
-# Run the script
 ./deploy-n8n.sh
+```
+
+
+
+## Directory Structure
+
+```
+n8n-universal-deploy/
+├── deploy-n8n.sh         # Main deployment script
+├── lib/                  # Helper scripts (sourced by main script)
+│   ├── common.sh
+│   ├── detection.sh
+│   ├── validation.sh
+│   ├── security.sh
+│   └── aws.sh
+├── templates/            # Static templates for compose, backup, etc.
+│   ├── backup.sh
+│   ├── docker-compose-local.yml
+│   ├── docker-compose-ssl.yml
+│   ├── init-data.sh
+│   ├── ssl-fix.sh
+│   ├── troubleshoot.sh
+│   └── update.sh
+└── README.md
 ```
 
 ## Deployment Modes
 
 ### 1. Production with Domain (Recommended for cloud)
-
 - Full SSL/TLS encryption with Let's Encrypt
 - Automatic HTTPS redirect
 - Traefik reverse proxy
@@ -52,14 +71,12 @@ Requirements:
 - Port 80 and 443 open
 
 ### 2. Local Development
-
 - HTTP only (no SSL)
 - Accessible at `http://localhost:5678`
 - Simplified setup for testing
 - No Traefik required
 
 ### 3. Internal Network
-
 - HTTP only
 - Custom IP or hostname
 - For private networks
@@ -71,17 +88,6 @@ Requirements:
 2. **Docker Installation**: Installs Docker if not present
 3. **Firewall Setup**: Configures UFW (Ubuntu/Debian) or firewalld (RHEL/CentOS)
 4. **Project Structure Creation**:
-   ```
-   ~/n8n-production/
-   ├── docker-compose.yml
-   ├── .env
-   ├── init-data.sh
-   ├── backup.sh
-   ├── update.sh
-   ├── credentials.txt
-   ├── local-files/
-   └── backups/
-   ```
 5. **Security Configuration**:
    - Generates secure passwords
    - Creates encryption keys
@@ -94,36 +100,21 @@ Requirements:
 
 ## Configuration Files
 
-### `.env` File
-Contains all environment variables:
-- Domain configuration
-- Database credentials
-- Security settings
-- Performance tuning
-
-### `docker-compose.yml`
-Docker Compose configuration tailored to your deployment mode
-
-### `backup.sh`
-Automated backup script for database and n8n data
-
-### `update.sh`
-Safe update script with automatic backup
+- `.env`: All environment variables (domain, database, security, performance)
+- `docker-compose.yml`: Docker Compose configuration (mode-specific)
+- `backup.sh`: Automated backup script
+- `update.sh`: Safe update script
 
 ## Post-Installation
 
 ### Access n8n
-
-After successful deployment:
 - **Production**: `https://your-domain.com`
 - **Local**: `http://localhost:5678`
 - **Internal**: `http://your-ip-or-hostname:5678`
 
-### Default Credentials
-
-All credentials are:
-1. Displayed in the terminal after installation
-2. Saved to `~/n8n-production/credentials.txt` (chmod 600)
+### Credentials
+- Displayed in the terminal after installation
+- Saved to `~/n8n-production/credentials.txt` (chmod 600)
 
 ### Useful Commands
 
@@ -147,107 +138,73 @@ cd ~/n8n-production && ./update.sh
 cat ~/n8n-production/credentials.txt
 ```
 
-## Troubleshooting
-
-### SSL Certificate Issues
-
-If you see "dangerous site" warnings:
-1. Check DNS propagation: `dig your-domain.com`
-2. View Traefik logs: `docker compose logs traefik`
-3. Ensure ports 80/443 are open
-4. Check Let's Encrypt rate limits
-
-### Connection Issues
-
-1. Verify all containers are running: `docker compose ps`
-2. Check n8n logs: `docker compose logs n8n`
-3. Ensure firewall rules are correct: `sudo ufw status` or `sudo firewall-cmd --list-all`
-
-### Database Connection
-
-1. Check PostgreSQL logs: `docker compose logs postgres`
-2. Verify environment variables: `docker compose config`
-3. Test database connection: 
-   ```bash
-   docker compose exec postgres psql -U n8n_admin -d n8n_production -c "\l"
-   ```
-
 ## Security Considerations
 
-1. **Change default passwords** immediately after installation
-2. **Enable 2FA** in n8n user settings
-3. **Regular backups** using the provided backup script
-4. **Keep system updated**: Run `./update.sh` periodically
-5. **Monitor logs** for suspicious activity
-6. **Use strong passwords** for all accounts
+- Change default passwords immediately
+- Enable 2FA in n8n user settings
+- Regular backups
+- Keep system updated (`./update.sh`)
+- Monitor logs
+- Use strong passwords
 
 ## Advanced Configuration
 
-### Custom PostgreSQL Settings
-
-Edit the PostgreSQL service in `docker-compose.yml`:
-```yaml
-postgres:
-  command: 
-    - "postgres"
-    - "-c"
-    - "max_connections=200"
-    - "-c"
-    - "shared_buffers=256MB"
-```
-
-### Performance Tuning
-
-Modify n8n environment variables in `.env`:
-```bash
-EXECUTIONS_TIMEOUT=7200  # 2 hours
-EXECUTIONS_DATA_MAX_AGE=168  # 7 days
-N8N_PAYLOAD_SIZE_MAX=64  # 64MB
-```
-
-### External Database
-
-To use an external database, modify the `.env` file:
-```bash
-DB_TYPE=postgresdb
-DB_POSTGRESDB_HOST=your-external-db.com
-DB_POSTGRESDB_PORT=5432
-DB_POSTGRESDB_DATABASE=n8n
-DB_POSTGRESDB_USER=n8n_user
-DB_POSTGRESDB_PASSWORD=your_password
-DB_POSTGRESDB_SSL_ENABLED=true
-```
+- **Custom PostgreSQL Settings**: Edit `docker-compose.yml`
+- **Performance Tuning**: Edit `.env` (timeouts, payload size, etc.)
+- **External Database**: Edit `.env` for external DB connection
 
 ## Backup and Recovery
 
-### Automated Backups
-
-Set up a cron job:
-```bash
-# Edit crontab
-crontab -e
-
-# Add daily backup at 2 AM
-0 2 * * * cd /home/ubuntu/n8n-production && ./backup.sh
-```
-
-### Manual Recovery
-
-```bash
-# Restore database
-docker exec -i postgres psql -U n8n_admin n8n_production < backups/n8n-db-20250718-021000.sql
-
-# Restore n8n data
-docker run --rm -v n8n-production_n8n_data:/data -v $PWD/backups:/backup alpine tar xzf /backup/n8n-data-20250718-021000.tar.gz -C /data
-```
+- **Automated Backups**: Use cron to run `backup.sh`
+- **Manual Recovery**: Use provided commands to restore database and data
 
 ## Support
 
-For issues specific to:
 - **This script**: Open an issue on GitHub
-- **n8n**: Visit [n8n Community](https://community.n8n.io/)
-- **Docker**: Check [Docker Documentation](https://docs.docker.com/)
+- **n8n**: [n8n Community](https://community.n8n.io/)
+- **Docker**: [Docker Documentation](https://docs.docker.com/)
 
 ## License
 
 This deployment script is provided as-is under the MIT License.
+
+## AWS EC2 Notes & SSL Troubleshooting
+
+### AWS EC2 Security Group
+
+If you are deploying on AWS EC2, you **must** update your instance's Security Group after the script finishes:
+
+- **Inbound:** Allow TCP ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) from 0.0.0.0/0 (or restrict as needed).
+- **Outbound:** Allow all traffic (default is usually open, but verify).
+- If you have issues connecting, you can temporarily allow all traffic in/out for troubleshooting, but restrict to only required ports for production.
+
+### SSL Certificate Issues (Let's Encrypt / Traefik)
+
+If SSL certificate generation fails or you see browser warnings:
+
+1. **Stop services:**
+   ```bash
+   cd ~/n8n-production
+   docker compose down
+   ```
+2. **Remove old certificate data:**
+   ```bash
+   docker volume rm n8n-production_traefik_data
+   ```
+3. **Restart services:**
+   ```bash
+   docker compose up -d
+   ```
+4. **Monitor Traefik logs for certificate generation:**
+   ```bash
+   docker logs -f traefik
+   ```
+5. **Check your DNS:** Ensure your domain's A record points to your EC2 public IP.
+6. **Check Security Group:** Ports 80 and 443 must be open to the world for Let's Encrypt to validate your domain.
+
+If you continue to have issues, check for:
+- DNS propagation delays
+- Let's Encrypt rate limits
+- Firewall or cloud provider network restrictions
+
+For more help, see the [n8n Community](https://community.n8n.io/) or open an issue on GitHub.
