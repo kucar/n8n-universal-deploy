@@ -148,7 +148,7 @@ deploy_n8n() {
     docker compose up -d
     # Wait for services to be ready
     log_info "Waiting for services to start..."
-    sleep 10
+    sleep 15
     # Check status
     docker compose ps
     # Test connectivity
@@ -158,10 +158,13 @@ deploy_n8n() {
         URL="http://$N8N_HOST:$DEFAULT_N8N_PORT"
     fi
     log_info "Testing n8n connectivity..."
-    if curl -s -o /dev/null -w "%{http_code}" "$URL" | grep -q "200\|301\|302"; then
+    if curl -s -o /dev/null -w "%{http_code}" "$URL" | grep -q "200\|301\|302\|401"; then
         log_info "n8n is accessible!"
     else
         log_warn "n8n might still be starting up. Check logs with: docker compose logs -f"
+        if [ "$USE_SSL" = true ]; then
+            log_warn "If SSL is failing, run: cd $PROJECT_DIR && ./ssl-fix.sh"
+        fi
     fi
 }
 
@@ -190,12 +193,19 @@ print_summary() {
     echo -e "Start n8n:        ${BLUE}cd $PROJECT_DIR && docker compose up -d${NC}"
     echo -e "Backup n8n:       ${BLUE}cd $PROJECT_DIR && ./backup.sh${NC}"
     echo -e "Update n8n:       ${BLUE}cd $PROJECT_DIR && ./update.sh${NC}"
+    echo -e "Troubleshoot:     ${BLUE}cd $PROJECT_DIR && ./troubleshoot.sh${NC}"
+    
+    if [ "$USE_SSL" = true ]; then
+        echo -e "Fix SSL issues:   ${BLUE}cd $PROJECT_DIR && ./ssl-fix.sh${NC}"
+    fi
+    
     echo -e "\n${YELLOW}Configuration Files:${NC}"
     echo -e "─────────────────────────────────────"
     echo -e "Project directory: ${BLUE}$PROJECT_DIR${NC}"
     echo -e "Environment file:  ${BLUE}$PROJECT_DIR/.env${NC}"
     echo -e "Docker Compose:    ${BLUE}$PROJECT_DIR/docker-compose.yml${NC}"
     echo -e "\n${GREEN}Deployment complete! Your n8n instance should be accessible shortly.${NC}"
+    
     # Save credentials to file
     cat > "$PROJECT_DIR/credentials.txt" << EOF
 n8n Deployment Credentials
@@ -224,11 +234,15 @@ EOF
 main() {
     print_banner
     check_not_root
+    
+    # Detect OS first
     detect_os
     log_info "Detected OS: $OS $VER"
-    setup_deployment_type
-    setup_domain_config
-    # Check Docker installation
+    
+    # Detect cloud provider
+    detect_cloud_provider
+    
+    # Check Docker installation EARLY - before any configuration
     if ! command_exists docker; then
         log_warn "Docker not found"
         echo -n "Install Docker? [Y/n]: "
@@ -242,7 +256,25 @@ main() {
             log_error "Docker is required for n8n deployment"
             exit 1
         fi
+    else
+        log_info "Docker is already installed"
     fi
+    
+    # Check Docker Compose
+    if ! docker compose version &>/dev/null && ! docker-compose version &>/dev/null; then
+        log_error "Docker Compose is not installed or not working properly"
+        exit 1
+    fi
+    
+    # Now continue with configuration
+    setup_deployment_type
+    setup_domain_config
+    
+    # AWS-specific checks
+    if [ "$CLOUD_PROVIDER" = "aws" ] && [ "$DEPLOYMENT_MODE" = "production" ]; then
+        check_aws_security_group
+    fi
+    
     # Configure firewall
     if [ "$DEPLOYMENT_MODE" != "local" ]; then
         echo -n "Configure firewall? [Y/n]: "
@@ -251,14 +283,18 @@ main() {
             configure_firewall
         fi
     fi
+    
     # Create project directory
     log_info "Creating project directory: $PROJECT_DIR"
     mkdir -p "$PROJECT_DIR"/{local-files,backups,logs}
+    
     # Setup credentials
     setup_credentials
+    
     # Create .env file
     log_info "Creating .env configuration file..."
     create_env_file
+    
     # Copy templates
     log_info "Copying template files..."
     if [ "$USE_SSL" = true ]; then
@@ -272,11 +308,13 @@ main() {
     cp "$(dirname "$0")/templates/ssl-fix.sh" "$PROJECT_DIR/ssl-fix.sh"
     cp "$(dirname "$0")/templates/troubleshoot.sh" "$PROJECT_DIR/troubleshoot.sh"
     chmod +x "$PROJECT_DIR/backup.sh" "$PROJECT_DIR/update.sh" "$PROJECT_DIR/init-data.sh" "$PROJECT_DIR/ssl-fix.sh" "$PROJECT_DIR/troubleshoot.sh"
+    
     # Deploy n8n
     echo -e "\n${YELLOW}Ready to deploy n8n with the following configuration:${NC}"
     echo "Deployment mode: $DEPLOYMENT_MODE"
     echo "Host: $N8N_HOST"
     echo "SSL enabled: $USE_SSL"
+    echo "Cloud provider: ${CLOUD_PROVIDER:-none}"
     echo -n -e "\n${YELLOW}Proceed with deployment? [Y/n]: ${NC}"
     read deploy_confirm
     if [ "$deploy_confirm" != "n" ] && [ "$deploy_confirm" != "N" ]; then
