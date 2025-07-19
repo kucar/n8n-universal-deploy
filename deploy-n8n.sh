@@ -1,18 +1,21 @@
 #!/bin/bash
 
 # Universal n8n Deployment Script
-# Supports: AWS EC2, DigitalOcean, Azure, GCP, Local installations
+# Supports: AWS EC2, DigitalOcean, Azure, GCP, Hetzner, Local installations
 # Features: SSL/TLS, PostgreSQL, Firewall configuration, Docker setup
 
 set -e
 
 # Source helper libraries
-for lib in common detection validation security aws; do
+for lib in common detection validation security aws hetzner; do
     if [ -f "$(dirname "$0")/lib/$lib.sh" ]; then
         source "$(dirname "$0")/lib/$lib.sh"
     else
-        echo "[ERROR] Missing required library: lib/$lib.sh" >&2
-        exit 1
+        # hetzner.sh is optional
+        if [ "$lib" != "hetzner" ]; then
+            echo "[ERROR] Missing required library: lib/$lib.sh" >&2
+            exit 1
+        fi
     fi
 done
 
@@ -233,14 +236,25 @@ EOF
 # Main execution
 main() {
     print_banner
+    
+    # Handle root user FIRST - this will create a new user if needed
     check_not_root
     
-    # Detect OS first
+    # Detect OS
     detect_os
     log_info "Detected OS: $OS $VER"
     
     # Detect cloud provider
     detect_cloud_provider
+    
+    # Detect Hetzner if the library exists
+    if command_exists detect_hetzner; then
+        detect_hetzner
+        # Show Hetzner-specific info if applicable
+        if [ "$IS_HETZNER" = "true" ]; then
+            hetzner_setup_info
+        fi
+    fi
     
     # Check Docker installation EARLY - before any configuration
     if ! command_exists docker; then
@@ -280,7 +294,12 @@ main() {
         echo -n "Configure firewall? [Y/n]: "
         read configure_fw
         if [ "$configure_fw" != "n" ] && [ "$configure_fw" != "N" ]; then
-            configure_firewall
+            # Use Hetzner-specific firewall config if on Hetzner
+            if [ "$IS_HETZNER" = "true" ] && command_exists configure_hetzner_firewall; then
+                configure_hetzner_firewall
+            else
+                configure_firewall
+            fi
         fi
     fi
     
@@ -315,6 +334,9 @@ main() {
     echo "Host: $N8N_HOST"
     echo "SSL enabled: $USE_SSL"
     echo "Cloud provider: ${CLOUD_PROVIDER:-none}"
+    if [ "$IS_HETZNER" = "true" ]; then
+        echo "VPS provider: Hetzner"
+    fi
     echo -n -e "\n${YELLOW}Proceed with deployment? [Y/n]: ${NC}"
     read deploy_confirm
     if [ "$deploy_confirm" != "n" ] && [ "$deploy_confirm" != "N" ]; then
